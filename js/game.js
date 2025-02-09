@@ -114,14 +114,18 @@ class Game {
 
     async initSound() {
         try {
-            await this.soundManager.init(); // 我们需要在 SoundManager 中添加这个方法
+            await this.soundManager.init();
+            console.log('Sound system initialized');
             this.soundReady = true;
         } catch (error) {
-            console.log('Failed to initialize sound system');
+            console.error('Failed to initialize sound system:', error);
         }
     }
 
-    init() {
+    async init() {
+        // 等待音频系统初始化
+        await this.initSound();
+        
         // 初始化游戏
         this.isRunning = true;
         this.score = 0;
@@ -140,7 +144,18 @@ class Game {
     }
 
     update() {
-        if (this.gameState !== 'playing') return;
+        if (this.gameState !== 'playing') {
+            // 如果游戏结束，停止背景音乐并播放结束音效
+            if (this.gameState === 'gameover' && this.soundReady) {
+                this.soundManager.stopBGM();
+                // 添加一个标记，确保音效只播放一次
+                if (!this.gameOverSoundPlayed) {
+                    this.soundManager.play('gameOver');
+                    this.gameOverSoundPlayed = true;
+                }
+            }
+            return;
+        }
         
         if (!this.isRunning) return;
         
@@ -183,6 +198,7 @@ class Game {
         // 检查玩家生命值
         if (this.playerHealth <= 0) {
             this.gameState = 'gameover';
+            this.gameOverSoundPlayed = false; // 重置标记
         }
         
         // 更新游戏时间
@@ -548,6 +564,11 @@ class Game {
                     
                     // 创建爆炸效果
                     this.createExplosion(enemy.x, enemy.y, enemy.color);
+                    
+                    // 播放爆炸音效
+                    if (this.soundReady) {
+                        this.soundManager.play('explosion');
+                    }
                 }
             });
         });
@@ -584,6 +605,11 @@ class Game {
                 // 玩家碰到道具
                 this.player.activatePowerup(powerup.type);
                 this.addNotification(powerup.type);
+                
+                // 播放道具音效
+                if (this.soundReady) {
+                    this.soundManager.play('powerup');
+                }
                 return false;
             }
             return true;
@@ -640,16 +666,12 @@ class Game {
         const y = e.clientY - rect.top;
 
         if (this.gameState === 'menu') {
-            // 检查开始按钮
             if (this.isClickButton(x, y, this.buttons.start)) {
                 this.startGame();
-            }
-            // 检查简介按钮
-            else if (this.isClickButton(x, y, this.buttons.about)) {
+            } else if (this.isClickButton(x, y, this.buttons.about)) {
                 this.showAbout();
             }
         } else if (this.gameState === 'gameover') {
-            // 检查重新开始按钮
             if (this.isClickButton(x, y, this.buttons.restart)) {
                 this.startGame();
             }
@@ -671,6 +693,8 @@ class Game {
         this.player = new Player(this.canvas.width / 2, this.canvas.height / 2);
         this.gameStartTime = Date.now();
         this.currentGameTime = 0;
+        this.gameOverSoundPlayed = false; // 重置标记
+        
         // 重置道具统计
         this.powerupStats = {
             multishot: 0,
@@ -681,6 +705,11 @@ class Game {
             spread: 0,
             shield: 0
         };
+        
+        // 开始播放背景音乐
+        if (this.soundReady) {
+            this.soundManager.startBGM();
+        }
     }
 
     showAbout() {
@@ -695,17 +724,15 @@ class Game {
             const distance = Math.sqrt(dx * dx + dy * dy);
             
             if (distance < this.player.size + enemy.size) {
-                // 玩家受到伤害
                 this.playerHealth -= enemy.damage;
-                
-                // 移除敌人
                 this.enemies.splice(index, 1);
-                
-                // 创建爆炸效果
                 this.createExplosion(enemy.x, enemy.y, enemy.color);
-                
-                // 记录受伤时间，用于显示警告效果
                 this.lastDamageTime = Date.now();
+                
+                // 播放受伤音效
+                if (this.soundReady) {
+                    this.soundManager.play('damage');
+                }
             }
         });
     }

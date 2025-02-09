@@ -57,6 +57,9 @@ class Player {
             right: false
         };
         
+        // 添加旋转相关属性
+        this.rotation = 0;
+        
         this.bindControls();
         this.bindMouseControls();
     }
@@ -144,12 +147,9 @@ class Player {
     shoot() {
         const currentTime = Date.now();
         if (currentTime - this.lastShootTime >= this.shootInterval) {
-            // 计算射击方向
-            const dx = this.mouseX - this.x;
-            const dy = this.mouseY - this.y;
-            
-            // 计算飞船朝向角度
-            this.rotation = Math.atan2(dy, dx);
+            // 计算射击方向（使用已经计算好的旋转角度）
+            const dx = Math.cos(this.rotation);
+            const dy = Math.sin(this.rotation);
             
             this.createBullet(dx, dy);
             
@@ -159,7 +159,7 @@ class Player {
             // 添加后坐力效果
             this.addRecoil(dx, dy);
             
-            // 播放射击音效（添加检查）
+            // 播放射击音效
             if (window.game.soundReady) {
                 window.game.soundManager.play('shoot');
             }
@@ -232,7 +232,12 @@ class Player {
     }
 
     update() {
-        // 直接更新位置，不需要时间检查
+        // 更新玩家朝向（始终对准鼠标）
+        const dx = this.mouseX - this.x;
+        const dy = this.mouseY - this.y;
+        this.rotation = Math.atan2(dy, dx);
+        
+        // 直接更新位置
         this.x += this.moveX * this.speed;
         this.y += this.moveY * this.speed;
         
@@ -294,33 +299,65 @@ class Player {
         // 绘制子弹
         this.bullets.forEach(bullet => bullet.draw(ctx));
         
-        // 移动到玩家位置，但还不要旋转
+        // 移动到玩家位置
         ctx.translate(this.x, this.y);
         
         // 先绘制护盾（不受玩家旋转影响）
         this.drawShields(ctx);
         
-        // 再旋转并绘制玩家
-        if (this.rotation !== undefined) {
-            ctx.rotate(this.rotation + Math.PI / 2);
-        }
+        // 旋转玩家
+        ctx.rotate(this.rotation + Math.PI / 2);
         
-        // 绘制玩家飞船
+        // 绘制战机主体
         ctx.beginPath();
         ctx.fillStyle = this.color;
-        ctx.moveTo(0, -this.size);
-        ctx.lineTo(-this.size, this.size);
-        ctx.lineTo(this.size, this.size);
+        
+        // 主体
+        ctx.moveTo(0, -this.size);  // 机头
+        ctx.lineTo(-this.size * 0.4, -this.size * 0.2);  // 左前机身
+        ctx.lineTo(-this.size * 0.8, this.size * 0.2);   // 左机翼
+        ctx.lineTo(-this.size * 0.3, this.size * 0.2);   // 左机身收缩
+        ctx.lineTo(-this.size * 0.5, this.size);         // 左尾翼
+        ctx.lineTo(0, this.size * 0.7);                  // 尾部中心
+        ctx.lineTo(this.size * 0.5, this.size);          // 右尾翼
+        ctx.lineTo(this.size * 0.3, this.size * 0.2);    // 右机身收缩
+        ctx.lineTo(this.size * 0.8, this.size * 0.2);    // 右机翼
+        ctx.lineTo(this.size * 0.4, -this.size * 0.2);   // 右前机身
         ctx.closePath();
         ctx.fill();
         
-        // 玩家发光效果
+        // 驾驶舱
         ctx.beginPath();
-        const gradient = ctx.createRadialGradient(0, 0, this.size * 0.5, 0, 0, this.size * 1.5);
-        gradient.addColorStop(0, 'rgba(0, 255, 0, 0.3)');
-        gradient.addColorStop(1, 'rgba(0, 255, 0, 0)');
-        ctx.fillStyle = gradient;
-        ctx.arc(0, 0, this.size * 1.5, 0, Math.PI * 2);
+        ctx.fillStyle = '#00ffff';  // 蓝色驾驶舱
+        ctx.moveTo(0, -this.size * 0.5);
+        ctx.lineTo(-this.size * 0.2, -this.size * 0.1);
+        ctx.lineTo(this.size * 0.2, -this.size * 0.1);
+        ctx.closePath();
+        ctx.fill();
+        
+        // 引擎喷射效果
+        ctx.beginPath();
+        const engineGlow = ctx.createRadialGradient(
+            0, this.size * 0.7, 0,
+            0, this.size * 0.7, this.size * 0.5
+        );
+        engineGlow.addColorStop(0, 'rgba(255, 100, 0, 0.8)');  // 橙色核心
+        engineGlow.addColorStop(0.5, 'rgba(255, 50, 0, 0.4)'); // 红色过渡
+        engineGlow.addColorStop(1, 'rgba(255, 0, 0, 0)');      // 透明边缘
+        ctx.fillStyle = engineGlow;
+        ctx.arc(0, this.size * 0.7, this.size * 0.5, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // 飞船整体发光效果
+        ctx.beginPath();
+        const shipGlow = ctx.createRadialGradient(
+            0, 0, this.size * 0.5,
+            0, 0, this.size * 2
+        );
+        shipGlow.addColorStop(0, 'rgba(0, 255, 0, 0.2)');
+        shipGlow.addColorStop(1, 'rgba(0, 255, 0, 0)');
+        ctx.fillStyle = shipGlow;
+        ctx.arc(0, 0, this.size * 2, 0, Math.PI * 2);
         ctx.fill();
         
         ctx.restore();

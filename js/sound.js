@@ -14,34 +14,63 @@ class SoundManager {
             shoot: 3,
             explosion: 5
         };
+        
+        // 音频上下文
+        this.audioContext = null;
+        try {
+            this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        } catch (error) {
+            console.log('Web Audio API not supported');
+        }
+
+        // 添加加载状态追踪
+        this.loadedSounds = new Set();
     }
 
     async init() {
+        console.log('Initializing sound system...');
         // 尝试加载音效
-        await this.loadSounds({
-            shoot: 'sounds/shoot.wav',
-            explosion: 'sounds/explosion.wav',
-            powerup: 'sounds/powerup.wav',
-            damage: 'sounds/damage.wav',
-            gameOver: 'sounds/gameover.wav',
-            bgm: 'sounds/bgm.mp3'
-        });
+        const soundPaths = {
+            shoot: './sounds/shoot.wav',
+            explosion: './sounds/explosion.wav',
+            powerup: './sounds/powerup.wav',
+            damage: './sounds/damage.wav',
+            gameOver: './sounds/gameover.wav',
+            bgm: './sounds/bgm.wav'
+        };
+
+        try {
+            await this.loadSounds(soundPaths);
+            console.log('Sound initialization complete');
+        } catch (error) {
+            console.error('Sound initialization failed:', error);
+            throw error;
+        }
     }
 
     async loadSounds(soundPaths) {
+        const loadPromises = [];
+        console.log('Loading sounds from paths:', soundPaths);
+
         for (const [name, path] of Object.entries(soundPaths)) {
             try {
+                console.log(`Attempting to load sound: ${name} from ${path}`);
                 const audio = new Audio();
                 
-                // 创建一个 Promise 来检查音频是否可以加载
-                await new Promise((resolve, reject) => {
-                    audio.addEventListener('canplaythrough', () => resolve(), { once: true });
-                    audio.addEventListener('error', () => reject(), { once: true });
-                    audio.src = path;
+                const loadPromise = new Promise((resolve, reject) => {
+                    audio.addEventListener('canplaythrough', () => {
+                        console.log(`Successfully loaded sound: ${name}`);
+                        this.loadedSounds.add(name);
+                        resolve();
+                    }, { once: true });
+                    
+                    audio.addEventListener('error', (e) => {
+                        console.error(`Failed to load sound: ${name} from ${path}`, e);
+                        reject(new Error(`Failed to load sound: ${name}`));
+                    }, { once: true });
                 });
 
-                // 如果加载成功，添加到音效库
-                this.sounds[name] = audio;
+                audio.src = path;
                 
                 // 设置特殊属性
                 if (name === 'bgm') {
@@ -59,61 +88,90 @@ class SoundManager {
                 };
                 audio.volume = volumes[name] || 0.5;
 
+                // 预加载音频
+                audio.load();
+                
+                // 存储音频对象
+                this.sounds[name] = {
+                    element: audio,
+                    pool: [audio]
+                };
+
+                // 为频繁播放的音效创建多个实例
+                if (this.maxConcurrent[name]) {
+                    for (let i = 1; i < this.maxConcurrent[name]; i++) {
+                        const clone = audio.cloneNode();
+                        clone.load();
+                        this.sounds[name].pool.push(clone);
+                    }
+                }
+
+                loadPromises.push(loadPromise);
             } catch (error) {
-                console.log(`Failed to load sound: ${name}`);
+                console.error(`Error setting up sound: ${name}`, error);
             }
         }
+
+        // 等待所有音频加载完成
+        await Promise.all(loadPromises);
     }
 
     play(soundName) {
-        // 如果声音不存在，直接返回
-        if (!this.sounds[soundName]) return;
+        if (!this.sounds[soundName] || !this.loadedSounds.has(soundName)) {
+            console.log(`Sound not loaded: ${soundName}`);
+            return;
+        }
 
         try {
-            const sound = this.sounds[soundName];
-            
-            // 对于需要限制并发的音效
-            if (this.maxConcurrent[soundName]) {
-                if (this.playingSounds[soundName] >= this.maxConcurrent[soundName]) {
-                    return;
-                }
-                this.playingSounds[soundName]++;
-                
-                // 播放完成后减少计数
-                sound.addEventListener('ended', () => {
-                    this.playingSounds[soundName]--;
-                }, { once: true });
-            }
+            const soundData = this.sounds[soundName];
+            const availableAudio = soundData.pool.find(audio => 
+                audio.paused || audio.ended
+            );
 
-            // 克隆音频对象以支持重叠播放
-            const soundClone = sound.cloneNode();
-            soundClone.play().catch(e => {
-                console.log(`Sound play failed: ${soundName}`, e);
-            });
+            if (availableAudio) {
+                availableAudio.currentTime = 0;
+                const playPromise = availableAudio.play();
+                if (playPromise) {
+                    playPromise.catch(e => {
+                        console.error(`Sound play failed: ${soundName}`, e);
+                    });
+                }
+            }
         } catch (error) {
-            console.log(`Error playing sound: ${soundName}`, error);
+            console.error(`Error playing sound: ${soundName}`, error);
         }
     }
 
     startBGM() {
-        if (this.sounds.bgm) {
-            this.sounds.bgm.play().catch(e => {
-                console.log("BGM play failed:", e);
+        if (!this.sounds.bgm || !this.loadedSounds.has('bgm')) {
+            console.log('BGM not loaded');
+            return;
+        }
+
+        const bgm = this.sounds.bgm.element;
+        bgm.currentTime = 0;
+        const playPromise = bgm.play();
+        if (playPromise) {
+            playPromise.catch(e => {
+                console.error("BGM play failed:", e);
             });
         }
     }
 
     stopBGM() {
         if (this.sounds.bgm) {
-            this.sounds.bgm.pause();
-            this.sounds.bgm.currentTime = 0;
+            const bgm = this.sounds.bgm.element;
+            bgm.pause();
+            bgm.currentTime = 0;
         }
     }
 
     setVolumes(volumes) {
         for (const [key, volume] of Object.entries(volumes)) {
             if (this.sounds[key]) {
-                this.sounds[key].volume = volume;
+                this.sounds[key].pool.forEach(audio => {
+                    audio.volume = volume;
+                });
             }
         }
     }
