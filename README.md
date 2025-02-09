@@ -2,6 +2,8 @@
 
 一个基于 Canvas + JavaScript 开发的《Geometry Wars》克隆版本。这是一款充满霓虹风格的双摇杆射击游戏，融合了经典街机游戏的精髓和现代游戏设计元素。
 
+> 所有代码均由Cursor + Claude-3.5 Sonnet 生成
+
 ## 游戏特性
 
 ### 核心玩法
